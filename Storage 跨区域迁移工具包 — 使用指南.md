@@ -28,7 +28,7 @@ created: 2026-03-09
 
 ### 1.1 背景
 
-Azure China CE1（华东）/ CN1（华北）数据中心将于 **2026-07-01 关闭**。客户需将 Blob Storage 和 Azure Files 数据迁移到 CN3（华北三）。
+Azure China CE1（华东）/ CN1（华北）数据中心将于 **2026-07-01 关闭**，客户需将 Blob Storage 和 Azure Files 数据及时迁出。
 
 ### 1.2 方案概述
 
