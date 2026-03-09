@@ -32,27 +32,23 @@ else
     DST_BASE="https://${DST_ACCOUNT}.file.core.chinacloudapi.cn"
 fi
 
+# ─── 递归杀掉进程及其所有后代（不误杀其他脚本的进程） ───
+kill_tree() {
+    local pid=$1
+    local children
+    children=$(pgrep -P "$pid" 2>/dev/null) || true
+    for child in $children; do
+        kill_tree "$child"
+    done
+    kill -9 "$pid" 2>/dev/null || true
+}
+
 # ─── 子命令: stop ───
 if [ "${1:-}" = "stop" ]; then
     echo "正在停止增量同步..."
 
-    # 停调度器
-    if [ -f "$DELTA_PID_FILE" ]; then
-        delta_pid=$(cat "$DELTA_PID_FILE")
-        if kill -0 "$delta_pid" 2>/dev/null; then
-            kill "$delta_pid" 2>/dev/null || true
-            echo "  [OK] 增量同步调度器已停止 (PID: ${delta_pid})"
-        else
-            echo "  [WARN] 增量同步调度器未在运行"
-        fi
-        rm -f "$DELTA_PID_FILE"
-    else
-        echo "  [WARN] 未找到调度器 PID 文件"
-    fi
-
-    # 通过 PID 文件停掉每个容器的 azcopy 进程
+    # 1) 先停容器同步进程（必须在停调度器之前，否则调度器子进程树被杀后 azcopy 孤儿化）
     killed=0
-    # 查找最近一次 delta 的目录
     if [ -f "$SYNC_COUNT_FILE" ]; then
         last_sync=$(cat "$SYNC_COUNT_FILE")
         last_sync_dir="${LOG_DIR}/delta_${last_sync}"
@@ -60,15 +56,28 @@ if [ "${1:-}" = "stop" ]; then
             [ -f "$pid_file" ] || continue
             container_pid=$(cat "$pid_file")
             if kill -0 "$container_pid" 2>/dev/null; then
-                pkill -P "$container_pid" 2>/dev/null || true
-                kill "$container_pid" 2>/dev/null || true
+                kill_tree "$container_pid"
                 killed=$((killed + 1))
             fi
             rm -f "$pid_file"
         done
     fi
     if [ "$killed" -gt 0 ]; then
-        echo "  [OK] 已停止 ${killed} 个容器同步进程"
+        echo "  [OK] 已停止 ${killed} 个容器同步进程（含 azcopy）"
+    fi
+
+    # 2) 再停调度器（只杀调度器自身，不递归）
+    if [ -f "$DELTA_PID_FILE" ]; then
+        delta_pid=$(cat "$DELTA_PID_FILE")
+        if kill -0 "$delta_pid" 2>/dev/null; then
+            kill -9 "$delta_pid" 2>/dev/null || true
+            echo "  [OK] 增量同步调度器已停止 (PID: ${delta_pid})"
+        else
+            echo "  [WARN] 增量同步调度器未在运行"
+        fi
+        rm -f "$DELTA_PID_FILE"
+    else
+        echo "  [WARN] 未找到调度器 PID 文件"
     fi
 
     echo "[$(date -u)] 增量同步手动停止" >> "$TIMELINE"

@@ -27,15 +27,41 @@ SCHEDULER_LOG="${LOG_DIR}/scheduler.log"
 
 mkdir -p "$LOG_DIR" "$PLAN_DIR"
 
+# ─── 递归杀掉进程及其所有后代（不误杀其他脚本的进程） ───
+kill_tree() {
+    local pid=$1
+    local children
+    children=$(pgrep -P "$pid" 2>/dev/null) || true
+    for child in $children; do
+        kill_tree "$child"
+    done
+    kill -9 "$pid" 2>/dev/null || true
+}
+
 # ─── 子命令: stop ───
 if [ "${1:-}" = "stop" ]; then
     echo "正在停止迁移..."
 
-    # 停调度器
+    # 1) 先停 batch 进程（必须在停调度器之前，否则调度器子进程树被杀后 azcopy 孤儿化）
+    killed=0
+    for pid_file in "${LOG_DIR}"/batch_*.pid; do
+        [ -f "$pid_file" ] || continue
+        batch_pid=$(cat "$pid_file")
+        if kill -0 "$batch_pid" 2>/dev/null; then
+            kill_tree "$batch_pid"
+            killed=$((killed + 1))
+        fi
+        rm -f "$pid_file"
+    done
+    if [ "$killed" -gt 0 ]; then
+        echo "  [OK] 已停止 ${killed} 个 batch 进程（含 azcopy）"
+    fi
+
+    # 2) 再停调度器（只杀调度器自身，不递归）
     if [ -f "$SCHEDULER_PID_FILE" ]; then
         scheduler_pid=$(cat "$SCHEDULER_PID_FILE")
         if kill -0 "$scheduler_pid" 2>/dev/null; then
-            kill "$scheduler_pid" 2>/dev/null || true
+            kill -9 "$scheduler_pid" 2>/dev/null || true
             echo "  [OK] 调度器已停止 (PID: ${scheduler_pid})"
         else
             echo "  [WARN] 调度器未在运行"
@@ -43,23 +69,6 @@ if [ "${1:-}" = "stop" ]; then
         rm -f "$SCHEDULER_PID_FILE"
     else
         echo "  [WARN] 未找到调度器 PID 文件"
-    fi
-
-    # 通过 PID 文件停掉每个 batch 的 azcopy 进程
-    killed=0
-    for pid_file in "${LOG_DIR}"/batch_*.pid; do
-        [ -f "$pid_file" ] || continue
-        batch_pid=$(cat "$pid_file")
-        if kill -0 "$batch_pid" 2>/dev/null; then
-            # 杀 nohup bash 及其子进程 azcopy
-            pkill -P "$batch_pid" 2>/dev/null || true
-            kill "$batch_pid" 2>/dev/null || true
-            killed=$((killed + 1))
-        fi
-        rm -f "$pid_file"
-    done
-    if [ "$killed" -gt 0 ]; then
-        echo "  [OK] 已停止 ${killed} 个 batch 进程"
     fi
 
     # 把 running 状态标记回 queued，方便重新启动
