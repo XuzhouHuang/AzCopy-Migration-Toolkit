@@ -551,6 +551,4 @@ ps aux | grep azcopy | grep -v grep   # 详细进程列表
 | 方案选型总览 | [[Azure Storage 跨区域迁移 — 方案选型与总览]] |
 | Blob 迁移操作详解 | [[跨区域迁移 Blob Storage — 完整操作指南]] |
 | Azure Files 迁移操作详解 | [[跨区域迁移 Azure Files — 完整操作指南]] |
-| 工具包设计文档 | [[Storage 跨区域迁移工具包 — 设计文档]] |
-| 1TB 测试方案 | [[跨区域迁移 1TB 小文件测试方案 — Blob 与 Azure Files]] |
 | AzCopy 性能优化 | [learn](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azcopy-optimize) |
