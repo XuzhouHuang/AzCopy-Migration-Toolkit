@@ -501,5 +501,3 @@ graph TD
 | AzCopy copy vs sync 对比 | [learn](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azcopy-blobs-copy) |
 | Azure China Bandwidth 定价 | [azure.cn](https://www.azure.cn/pricing/details/bandwidth/) |
 | Azure China Blob 操作定价 | [azure.cn](https://www.azure.cn/pricing/details/storage/blobs/) |
-| 1TB 测试方案 | [[跨区域迁移 1TB 小文件测试方案 — Blob 与 Azure Files]] |
-| 方案选型总览 | [[Azure Storage 跨区域迁移 — 方案选型与总览]] |
