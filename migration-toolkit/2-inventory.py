@@ -54,12 +54,13 @@ if STORAGE_TYPE == 'blob':
     from azure.storage.blob import BlobServiceClient
     ENDPOINT = f"https://{SRC_ACCOUNT}.blob.core.chinacloudapi.cn"
     service = BlobServiceClient(account_url=ENDPOINT, credential=SRC_SAS)
-elif STORAGE_TYPE == 'files':
+elif STORAGE_TYPE in ('files-smb', 'files-nfs'):
     from azure.storage.fileshare import ShareServiceClient
     ENDPOINT = f"https://{SRC_ACCOUNT}.file.core.chinacloudapi.cn"
     service = ShareServiceClient(account_url=ENDPOINT, credential=SRC_SAS)
 else:
     print(f"[FAIL] 不支持的 STORAGE_TYPE: {STORAGE_TYPE}")
+    print(f"       支持的值: blob / files-smb / files-nfs")
     sys.exit(1)
 
 # ─── 获取容器/共享列表 ───

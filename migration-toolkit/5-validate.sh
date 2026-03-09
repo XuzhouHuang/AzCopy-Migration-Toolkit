@@ -21,6 +21,7 @@ if [ "$STORAGE_TYPE" = "blob" ]; then
     SRC_BASE="https://${SRC_ACCOUNT}.blob.core.chinacloudapi.cn"
     DST_BASE="https://${DST_ACCOUNT}.blob.core.chinacloudapi.cn"
 else
+    # files-smb 和 files-nfs 都使用 .file. 端点
     SRC_BASE="https://${SRC_ACCOUNT}.file.core.chinacloudapi.cn"
     DST_BASE="https://${DST_ACCOUNT}.file.core.chinacloudapi.cn"
 fi
@@ -88,9 +89,10 @@ for container in "${!CONTAINERS[@]}"; do
     fi
 
     # ─── 2. 抽样属性校验（Python SDK，不下载文件） ───
-    echo "  [2/2] 抽样属性校验（随机 100 个文件，比对 size + ETag）..."
+    echo "  [2/2] 抽样属性校验（随机 100 个文件，比对 size）..."
 
-    sample_result=$(python3 -c "
+    if [ "$STORAGE_TYPE" = "blob" ]; then
+        sample_result=$(python3 -c "
 import random
 from azure.storage.blob import BlobServiceClient
 
@@ -135,6 +137,64 @@ print(f'missing={missing}')
 for d in details:
     print(d)
 " 2>/dev/null) || true
+
+    else
+        # Azure Files (SMB/NFS): 用 ShareServiceClient 遍历文件并抽样比对
+        sample_result=$(python3 -c "
+import random
+from azure.storage.fileshare import ShareServiceClient
+
+src_svc = ShareServiceClient(account_url='${SRC_BASE}', credential='${SRC_SAS}')
+dst_svc = ShareServiceClient(account_url='${DST_BASE}', credential='${DST_SAS}')
+
+src_share = src_svc.get_share_client('${container}')
+dst_share = dst_svc.get_share_client('${container}')
+
+# 递归收集源端文件列表（取前 10000 个）
+src_files = []
+def walk(dir_client, prefix=''):
+    for item in dir_client.list_directories_and_files():
+        path = f'{prefix}/{item[\"name\"]}' if prefix else item['name']
+        if item['is_directory']:
+            sub = dir_client.get_subdirectory_client(item['name'])
+            walk(sub, path)
+        else:
+            src_files.append({'name': path, 'size': item.get('size', 0)})
+            if len(src_files) >= 10000:
+                return
+
+root = src_share.get_directory_client('')
+walk(root)
+
+sample_size = min(100, len(src_files))
+samples = random.sample(src_files, sample_size)
+
+checked = 0
+mismatch = 0
+missing = 0
+details = []
+
+for src_file in samples:
+    checked += 1
+    try:
+        dst_file_client = dst_share.get_directory_client('').get_file_client(src_file['name'])
+        dst_props = dst_file_client.get_file_properties()
+
+        if src_file['size'] != dst_props.size:
+            mismatch += 1
+            details.append(f'SIZE_MISMATCH: {src_file[\"name\"]} src={src_file[\"size\"]} dst={dst_props.size}')
+    except Exception:
+        missing += 1
+        details.append(f'MISSING: {src_file[\"name\"]}')
+
+print(f'checked={checked}')
+print(f'mismatch={mismatch}')
+print(f'missing={missing}')
+for d in details:
+    print(d)
+" 2>/dev/null) || true
+
+    fi
 
     if [ -z "$sample_result" ]; then
         echo "  [WARN] Python SDK 校验失败，跳过"

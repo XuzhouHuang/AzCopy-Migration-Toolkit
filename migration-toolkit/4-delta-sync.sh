@@ -27,6 +27,7 @@ if [ "$STORAGE_TYPE" = "blob" ]; then
     SRC_BASE="https://${SRC_ACCOUNT}.blob.core.chinacloudapi.cn"
     DST_BASE="https://${DST_ACCOUNT}.blob.core.chinacloudapi.cn"
 else
+    # files-smb 和 files-nfs 都使用 .file. 端点
     SRC_BASE="https://${SRC_ACCOUNT}.file.core.chinacloudapi.cn"
     DST_BASE="https://${DST_ACCOUNT}.file.core.chinacloudapi.cn"
 fi
@@ -181,6 +182,7 @@ for c in svc.list_containers():
     print(c.name)
 " 2>/dev/null)
     else
+        # files-smb 和 files-nfs 都使用 ShareServiceClient
         container_list=$(python3 -c "
 from azure.storage.fileshare import ShareServiceClient
 svc = ShareServiceClient(account_url='${SRC_BASE}', credential='${SRC_SAS}')
@@ -290,6 +292,17 @@ start_sync() {
     local log_file="${SYNC_LOG_DIR}/${container}.log"
     local src_url="${SRC_BASE}/${container}?${SRC_SAS}"
     local dst_url="${DST_BASE}/${container}?${DST_SAS}"
+    local smb_args=""
+
+    # Azure Files 需要保留权限和属性
+    if [ "$STORAGE_TYPE" = "files-smb" ]; then
+        smb_args="--preserve-smb-permissions=true --preserve-smb-info=true"
+    elif [ "$STORAGE_TYPE" = "files-nfs" ]; then
+        smb_args="--preserve-permissions=true --preserve-info=true --from-to=FileNFSFileNFS"
+    fi
+
+    # 确保目标容器/共享存在
+    azcopy make "${DST_BASE}/${container}?${DST_SAS}" 2>/dev/null || true
 
     sed -i "s/^${container}|queued$/${container}|running/" "$SYNC_QUEUE"
 
@@ -305,6 +318,7 @@ start_sync() {
             \"${dst_url}\" \
             --recursive \
             --overwrite ifSourceNewer \
+            ${smb_args} \
             --s2s-detect-source-changed \
             --log-level=ERROR
 

@@ -64,7 +64,7 @@ else
     echo "  [OK] 安装完成"
 fi
 
-if [ "$STORAGE_TYPE" = "files" ]; then
+if [[ "$STORAGE_TYPE" == files-* ]]; then
     if python3 -c "import azure.storage.fileshare" 2>/dev/null; then
         echo "  [OK] azure-storage-file-share SDK 已安装"
     else
@@ -149,7 +149,7 @@ check_sas() {
         if [ "$STORAGE_TYPE" = "blob" ] && [[ "$ss" != *"b"* ]]; then
             echo "  [FAIL] ${label}: ss=${ss} 缺少 'b'（Blob 服务）"
             errors=1
-        elif [ "$STORAGE_TYPE" = "files" ] && [[ "$ss" != *"f"* ]]; then
+        elif [[ "$STORAGE_TYPE" == files-* ]] && [[ "$ss" != *"f"* ]]; then
             echo "  [FAIL] ${label}: ss=${ss} 缺少 'f'（File 服务）"
             errors=1
         else
@@ -210,6 +210,7 @@ if [ "$STORAGE_TYPE" = "blob" ]; then
     SRC_ENDPOINT="https://${SRC_ACCOUNT}.blob.core.chinacloudapi.cn"
     DST_ENDPOINT="https://${DST_ACCOUNT}.blob.core.chinacloudapi.cn"
 else
+    # files-smb 和 files-nfs 都使用 .file. 端点
     SRC_ENDPOINT="https://${SRC_ACCOUNT}.file.core.chinacloudapi.cn"
     DST_ENDPOINT="https://${DST_ACCOUNT}.file.core.chinacloudapi.cn"
 fi

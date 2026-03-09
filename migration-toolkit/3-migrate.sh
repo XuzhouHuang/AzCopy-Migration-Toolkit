@@ -160,6 +160,7 @@ if [ "$STORAGE_TYPE" = "blob" ]; then
     SRC_BASE="https://${SRC_ACCOUNT}.blob.core.chinacloudapi.cn"
     DST_BASE="https://${DST_ACCOUNT}.blob.core.chinacloudapi.cn"
 else
+    # files-smb 和 files-nfs 都使用 .file. 端点
     SRC_BASE="https://${SRC_ACCOUNT}.file.core.chinacloudapi.cn"
     DST_BASE="https://${DST_ACCOUNT}.file.core.chinacloudapi.cn"
 fi
@@ -316,7 +317,15 @@ start_batch() {
 
     # 构造 URL
     local extra_args="--recursive"
+    local perm_args=""
     local src_url dst_url
+
+    # Azure Files 需要保留权限和属性
+    if [ "$STORAGE_TYPE" = "files-smb" ]; then
+        perm_args="--preserve-smb-permissions=true --preserve-smb-info=true"
+    elif [ "$STORAGE_TYPE" = "files-nfs" ]; then
+        perm_args="--preserve-permissions=true --preserve-info=true --from-to=FileNFSFileNFS"
+    fi
 
     if [ -z "$path" ] || [ "$path" = "(root_files)" ]; then
         src_url="${SRC_BASE}/${container}?${SRC_SAS}"
@@ -329,10 +338,8 @@ start_batch() {
         dst_url="${DST_BASE}/${container}/${path}?${DST_SAS}"
     fi
 
-    # 确保目标容器存在
-    if [ "$STORAGE_TYPE" = "blob" ]; then
-        azcopy make "${DST_BASE}/${container}?${DST_SAS}" 2>/dev/null || true
-    fi
+    # 确保目标容器/共享存在（azcopy make 同时支持 blob container 和 file share）
+    azcopy make "${DST_BASE}/${container}?${DST_SAS}" 2>/dev/null || true
 
     # 更新状态
     sed -i "s/^${batch_id}|queued$/${batch_id}|running/" "$QUEUE_FILE"
@@ -349,6 +356,7 @@ start_batch() {
             \"${src_url}\" \
             \"${dst_url}\" \
             ${extra_args} \
+            ${perm_args} \
             --check-length=true \
             --s2s-detect-source-changed \
             --log-level=ERROR
