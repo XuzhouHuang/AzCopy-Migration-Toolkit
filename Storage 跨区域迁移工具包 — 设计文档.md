@@ -345,7 +345,33 @@ else:
 > - 旧逻辑：50 万 < 800 万 → 不分批 → 1 个 azcopy 跑 30TB
 > - 新逻辑：50 万 < 800 万 **但** 30TB > 10TB → 按顶层目录拆分 → 多个 azcopy 并行
 
-### 3.6 容器发现策略（Delta Sync）
+### 3.6 Azure Files 特殊处理（SMB / NFS）
+
+`STORAGE_TYPE` 支持三种值，脚本根据类型自动选择不同的参数和 SDK：
+
+#### 三种 STORAGE_TYPE 对照
+
+| 环节 | `blob` | `files-smb` | `files-nfs` |
+|------|--------|-------------|-------------|
+| 端点域名 | `.blob.` | `.file.` | `.file.` |
+| 创建目标容器/共享 | `azcopy make` | `azcopy make` | `azcopy make` |
+| azcopy copy 额外参数 | 无 | `--preserve-smb-permissions=true --preserve-smb-info=true` | `--preserve-permissions=true --preserve-info=true --from-to=FileNFSFileNFS` |
+| 保留的权限 | — | NTFS ACL | POSIX uid/gid/mode |
+| 保留的属性 | — | SMB 属性（只读、隐藏、创建/修改时间） | 创建时间、最后写入时间 |
+| 盘点枚举 SDK | `BlobServiceClient.list_blobs()` | `ShareServiceClient` 递归 `walk_directory()` | `ShareServiceClient` 递归 `walk_directory()` |
+| 抽样校验 SDK | `BlobServiceClient` + `get_blob_properties()` | `ShareServiceClient` + `get_file_properties()` | `ShareServiceClient` + `get_file_properties()` |
+| SAS Services 校验 | `ss` 含 `b` | `ss` 含 `f` | `ss` 含 `f` |
+
+> [!important] SMB vs NFS 权限保留参数不同
+> - **SMB**：`--preserve-smb-permissions` 保留 NTFS ACL，`--preserve-smb-info` 保留 SMB 属性（只读、隐藏等）。ADF 不支持此功能，这是选择 AzCopy 的关键原因之一。
+> - **NFS**：`--preserve-permissions` 保留 POSIX owner/group/mode，`--preserve-info` 保留时间戳。必须加 `--from-to=FileNFSFileNFS` 显式指定 NFS-to-NFS 传输模式，否则 AzCopy 按 SMB 处理会失败。
+>
+> 来源：[MS Learn — Copy files from one Azure file share to another](https://learn.microsoft.com/azure/storage/files/migrate-files-between-shares)
+
+> [!note] NFS 共享的前置要求
+> NFS 共享只能在 **Premium FileStorage** 类型的存储账户上创建。目标端也必须是同类型的 Premium FileStorage SA。
+
+### 3.7 容器发现策略（Delta Sync）
 
 `4-delta-sync.sh` 的容器列表获取有三级回退：
 
@@ -501,3 +527,5 @@ graph TD
 | AzCopy copy vs sync 对比 | [learn](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azcopy-blobs-copy) |
 | Azure China Bandwidth 定价 | [azure.cn](https://www.azure.cn/pricing/details/bandwidth/) |
 | Azure China Blob 操作定价 | [azure.cn](https://www.azure.cn/pricing/details/storage/blobs/) |
+| 1TB 测试方案 | [[跨区域迁移 1TB 小文件测试方案 — Blob 与 Azure Files]] |
+| 方案选型总览 | [[Azure Storage 跨区域迁移 — 方案选型与总览]] |
