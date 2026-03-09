@@ -54,6 +54,7 @@ migration-toolkit/
 ├── 4-delta-sync.sh     ← 增量同步：后台调度器 + 按容器并行 azcopy copy
 ├── 5-validate.sh       ← 验证：文件数/大小对比 + 随机抽样属性校验
 ├── 6-report.sh         ← 报告：汇总 timeline + 验证结果 → migration_report.txt
+├── copy-rbac.sh        ← RBAC 复制：源 SA → 目标 SA 的角色分配
 ├── batch_plan.txt      ← [自动生成] 2-inventory.py 的输出
 └── status.sh           ← [废弃] 已合并到 3-migrate.sh status
 ```
@@ -202,17 +203,29 @@ LOG_DIR/
 **stop 命令流程：**
 
 ```bash
-# 1. 停调度器
-kill $(cat scheduler.pid)
+# 递归杀掉进程及其所有后代
+kill_tree() {
+    local pid=$1
+    for child in $(pgrep -P "$pid"); do
+        kill_tree "$child"
+    done
+    kill -9 "$pid"   # SIGKILL — azcopy 会忽略 SIGTERM
+}
 
-# 2. 遍历本脚本的 PID 文件，逐个停止
-for pid_file in ${LOG_DIR}/batch_*.pid; do    # migrate 用 batch_*.pid
-    pid=$(cat "$pid_file")
-    pkill -P "$pid"   # 先杀子进程 (azcopy)
-    kill "$pid"       # 再杀 nohup bash 包装进程
-    rm "$pid_file"
+# 1. 先停工作进程（必须在停调度器之前）
+for pid_file in ${LOG_DIR}/batch_*.pid; do
+    kill_tree $(cat "$pid_file")  # 递归杀掉 wrapper → bash → azcopy
 done
+
+# 2. 再停调度器（只杀自身，不递归）
+kill -9 $(cat scheduler.pid)
 ```
+
+> [!warning] 顺序很重要：先杀工作进程，再杀调度器
+> 如果先 `kill_tree(调度器)`，调度器的整棵子进程树会被一起杀掉，batch wrapper 进程死亡后 azcopy 会被孤儿化（reparented 到 PID 1），后续通过 PID 文件就找不到 azcopy 了。
+
+> [!note] 为什么用 `kill -9`（SIGKILL）而非默认的 SIGTERM？
+> AzCopy 会捕获 SIGTERM 做优雅退出（保存 job plan），但在高负载传输时可能无法及时响应。实测发现 `pkill azcopy`（默认 SIGTERM）无法终止正在传输的 azcopy 进程，必须用 `-9` 强杀。
 
 ### 2.4 子命令模式（Subcommand Pattern）
 
@@ -502,6 +515,7 @@ graph TD
 **软依赖（可跳过）：**
 - `4-delta-sync.sh` 不依赖 `3-migrate.sh`（可独立发现容器）
 - `6-report.sh` 缺少某些输入文件时会显示 N/A
+- `copy-rbac.sh` 独立于数据迁移流程（仅读 `config.env` 中的 SA 名称，使用 Azure CLI 认证而非 SAS）
 
 ---
 

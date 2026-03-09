@@ -354,6 +354,47 @@ bash 6-report.sh
 
 ---
 
+## 四（附）、附加工具
+
+### RBAC 角色分配复制
+
+迁移数据之外，还需要将源端 SA 上的 RBAC 角色分配复制到目标 SA，确保用户/应用在切换后仍有相同的访问权限。
+
+```bash
+# 预览模式（只查看，不执行）
+bash copy-rbac.sh
+
+# 确认后执行
+bash copy-rbac.sh apply
+```
+
+**前提条件：**
+- 已安装 Azure CLI 并已登录（`az cloud set --name AzureChinaCloud && az login`）
+- 登录账号在源端需有 **Reader** 权限，在目标端需有 **User Access Administrator** 或 **Owner** 权限
+
+**脚本行为：**
+
+| 步骤 | 操作 |
+|------|------|
+| 1 | 检查 Azure CLI 是否已安装并登录 |
+| 2 | 通过 `config.env` 中的 SA 名称查找 Resource ID |
+| 3 | 查询源端 SA 上**直接分配**的角色（过滤掉从 RG/订阅继承的） |
+| 4 | 逐条在目标 SA 上创建相同的角色分配（已存在则跳过） |
+
+> [!tip] 只复制直接分配，不复制继承
+> 从资源组或订阅级别继承的角色分配不需要手动复制 — 如果目标 SA 在同一资源组/订阅下，继承关系会自动生效。
+
+> [!note] 跨订阅场景
+> 如果源端和目标端在不同订阅，通过环境变量指定：
+> ```bash
+> SRC_SUB="<源端订阅ID>" DST_SUB="<目标端订阅ID>" bash copy-rbac.sh apply
+> ```
+
+> [!important] 此脚本独立于数据迁移流程
+> `copy-rbac.sh` 使用 Azure CLI 认证（`az login`），与数据迁移的 SAS Token 认证无关。可在迁移流程的任意阶段执行，建议在**验证通过后、切换前**执行。
+
+---
+
 ## 五、日志目录结构
 
 所有日志默认存放在 `/data/azcopy-logs/`（可通过 `config.env` 的 `LOG_DIR` 修改）：
@@ -416,9 +457,9 @@ cat /data/azcopy-logs/migration_report.txt
 
 ---
 
-## 六、常见问题处理
+## 七、常见问题处理
 
-### 6.1 某个 batch 失败了怎么办？
+### 7.1 某个 batch 失败了怎么办？
 
 ```bash
 # 1. 查看哪个 batch 失败
@@ -431,7 +472,7 @@ cat /data/azcopy-logs/batch_003.log
 bash 3-migrate.sh
 ```
 
-### 6.2 SAS Token 过期了
+### 7.2 SAS Token 过期了
 
 ```bash
 # 1. 在 Azure Portal 重新生成 SAS
@@ -443,7 +484,7 @@ bash 3-migrate.sh stop
 bash 3-migrate.sh
 ```
 
-### 6.3 VM 意外重启
+### 7.3 VM 意外重启
 
 直接重新运行即可，脚本会自动恢复：
 
@@ -453,11 +494,11 @@ bash 3-migrate.sh
 #       已完成: 2/4  待恢复: 2
 ```
 
-### 6.4 `AuthorizationResourceTypeMismatch` 错误
+### 7.4 `AuthorizationResourceTypeMismatch` 错误
 
 SAS Token 的 Resource Types 不完整。必须同时包含 `s`（Service）+ `c`（Container）+ `o`（Object），即 `srt=sco`。重新生成 SAS 时确保三个都勾选。
 
-### 6.5 AzCopy 崩溃（Go goroutine panic）
+### 7.5 AzCopy 崩溃（Go goroutine panic）
 
 通常由并发度过高引起。检查 `config.env`：
 
@@ -467,7 +508,7 @@ AZCOPY_CONCURRENCY=128   # 跨区域建议 64-256，不超过 256
 
 如果之前设置了 1000 或更高，降低到 128 后重新运行。
 
-### 6.6 验证发现文件数不一致
+### 7.6 验证发现文件数不一致
 
 ```bash
 # 1. 检查源端是否在验证期间仍有写入
@@ -477,7 +518,7 @@ bash 4-delta-sync.sh
 bash 5-validate.sh
 ```
 
-### 6.7 如何查看 azcopy 进程数
+### 7.7 如何查看 azcopy 进程数
 
 ```bash
 pgrep -c azcopy    # 当前运行的 azcopy 进程数
@@ -486,7 +527,7 @@ ps aux | grep azcopy | grep -v grep   # 详细进程列表
 
 ---
 
-## 七、CSS 工程师操作 SOP
+## 八、CSS 工程师操作 SOP
 
 ### 给客户的指导步骤（可直接发给客户）
 
@@ -506,6 +547,8 @@ ps aux | grep azcopy | grep -v grep   # 详细进程列表
    bash 4-delta-sync.sh             # 最后一次增量
    bash 5-validate.sh               # 验证
    bash 6-report.sh                 # 报告
+   bash copy-rbac.sh                # 预览 RBAC 角色分配
+   bash copy-rbac.sh apply          # 复制到目标 SA
 6. 验证通过后，切换应用端的 Connection String 到目标 SA
 ```
 
@@ -521,7 +564,7 @@ ps aux | grep azcopy | grep -v grep   # 详细进程列表
 
 ---
 
-## 八、注意事项
+## 九、注意事项
 
 > [!warning] SAS Token 有效期
 > SAS 过期后所有脚本都会报 `AuthenticationFailed`。如果迁移可能持续数天，建议设置 30 天有效期。
@@ -545,7 +588,7 @@ ps aux | grep azcopy | grep -v grep   # 详细进程列表
 
 ---
 
-## 九、参考文档
+## 十、参考文档
 
 | 文档 | 链接 |
 |------|------|
