@@ -45,14 +45,9 @@ Azure China East (CE1)/China North 1 (CN1)数据中心将于 **2026-07-01 关闭
 | Blob Storage 跨区域迁移（CE1/CN1 → CN3） | 是 |
 | Azure Files — SMB 跨区域迁移（保留 NTFS ACL） | 是 |
 | Azure Files — NFS 跨区域迁移（保留 POSIX 权限） | 是 |
-| 单容器 / 整个 Storage Account 迁移 | 是 |
+| 单容器 / SA 下所有容器或共享迁移 | 是 |
 | 源端持续写入（业务不停） | 是 |
 | 大文件数场景（千万级） | 是 |
-
-> [!warning] 不支持的场景
-> - **Table Storage** — 需要 ADF 或自定义代码，参见 [[跨区域迁移 Table Storage — ADF 与替代方案]]
-> - **Queue Storage** — 需要自定义代码，参见 [[跨区域迁移 Queue Storage — 自定义代码方案]]
-
 
 ---
 
